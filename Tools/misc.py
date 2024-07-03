@@ -13,6 +13,70 @@ from scipy.ndimage import shift, gaussian_filter, center_of_mass
 from numpy.fft import fft2, fftshift
 import scipy.ndimage as ndi
 from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.axes_grid1.inset_locator import InsetPosition
+
+
+def add_complex_colorwheel(fig, ax, loc=4, width=0.2, height=0.2, pad=0.05):
+    """
+    Add a complex colorwheel to the given figure and axes.
+
+    Parameters:
+    - fig: matplotlib figure object
+    - ax: matplotlib axes object
+    - loc: Integer (1, 2, 3, or 4) specifying the corner (default: 4)
+           1: upper right, 2: upper left, 3: lower left, 4: lower right
+    - width: Width of the colorwheel (as a fraction of the main axes)
+    - height: Height of the colorwheel (as a fraction of the main axes)
+    - complex2rgb: Function to convert complex numbers to RGB values
+
+    Returns:
+    - axins: The axes object of the colorwheel
+    """
+
+    # Create the colorwheel data
+    r = np.linspace(0, 1, 100)
+    theta = np.linspace(0, 2 * np.pi, 100)
+    r, theta = np.meshgrid(r, theta)
+    z = r * np.exp(1j * theta)
+    rgb = complex2rgb(z) / 255
+
+    # Create a new axes for the colorwheel
+    axins = fig.add_axes([0, 0, 1, 1], projection='polar')
+
+    # Set the position based on loc
+    if loc == 1:  # upper right
+        ip = InsetPosition(ax, [1 - width + pad, 1 - height+ pad, width, height])
+    elif loc == 2:  # upper left
+        ip = InsetPosition(ax, [0 + pad, 1 - height + pad, width, height])
+    elif loc == 3:  # lower left
+        ip = InsetPosition(ax, [0 + pad, 0 + pad, width, height])
+    else:  # loc == 4, lower right
+        ip = InsetPosition(ax, [1 - width + pad, 0 + pad, width, height])
+
+    axins.set_axes_locator(ip)
+
+    # Turn off the grid explicitly
+    axins.grid(False)
+
+    # Plot the colorwheel in the inset axes
+    im_wheel = axins.pcolormesh(theta, r, np.ones_like(r), color=rgb.reshape(-1, 3))
+
+    # Remove all ticks and labels
+    axins.set_yticks([])
+    axins.set_xticks([])
+
+    # Add phase labels inside the circle
+    label_radius = 0.75  # Adjust this value to move labels radially
+    labels = ['0', 'π/2', 'π', '3π/2']
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False)
+    for angle, label in zip(angles, labels):
+        axins.text(angle, label_radius, label, ha='center', va='center')
+
+    # Remove the circle's outline
+    axins.spines['polar'].set_visible(False)
+
+    return axins
+
 
 def setCustomColorMap():
     """
@@ -1282,6 +1346,67 @@ class MyFRC:
             res = 1 / (2 * qm[-1])  # (um)
         print(f'resolution: {res} um')
         return res
+
+
+def simulate_ccd_image(field, bit_depth=12, peak_photons=10000, quantum_efficiency=0.7,
+                       quantum_well=30000, readout_noise=10, dc_level=100):
+    """
+    Simulate CCD sensor image capture with noise and DC level.
+
+    Parameters:
+    field : 2D complex numpy array
+        The complex field incident on the sensor
+    bit_depth : int
+        Bit depth of the camera (default: 12)
+    peak_photons : float
+        Maximum number of photons in the brightest pixel (default: 10000)
+    quantum_efficiency : float
+        Quantum efficiency of the sensor (default: 0.7)
+    quantum_well : int
+        Full well capacity of the pixel (default: 30000)
+    readout_noise : float
+        Standard deviation of readout noise in electrons (default: 10)
+    dc_level : float
+        DC level in electrons, representing dark current and fixed pattern noise (default: 100)
+
+    Returns:
+    2D numpy array of uint16
+        Simulated CCD image
+    """
+
+    # Calculate intensity (proportional to photon count)
+    intensity = np.abs(field) ** 2
+
+    # Scale intensity to peak_photons
+    scale_factor = peak_photons / np.max(intensity)
+    photon_count = intensity * scale_factor
+
+    # Apply quantum efficiency
+    electron_count = np.random.poisson(photon_count * quantum_efficiency)
+
+    # Add DC level (with Poisson noise)
+    electron_count += np.random.poisson(dc_level, electron_count.shape)
+
+    # Apply quantum well limitation
+    if quantum_well is not None:
+        electron_count = np.minimum(electron_count, quantum_well)
+
+    # Add readout noise
+    electron_count = electron_count + np.random.normal(0, readout_noise, electron_count.shape)
+
+    # Convert to ADU (Analog-to-Digital Units)
+    max_adu = 2 ** bit_depth - 1
+    if quantum_well is not None:
+        adu_per_electron = max_adu / quantum_well
+    else:
+        adu_per_electron = max_adu / np.amax(electron_count)
+
+    adu_count = electron_count * adu_per_electron
+
+    # Quantize and clip
+    adu_count = np.clip(np.round(adu_count), 0, max_adu)
+
+    return adu_count.astype(np.uint16)
 
 if __name__ == "__main__":
     pass
