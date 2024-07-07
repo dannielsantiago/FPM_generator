@@ -1,0 +1,22 @@
+name: E30
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.9, <3.12
+  - numpy
+  - h5py
+  - matplotlib > 3.7.2
+  - scipy 
+  - scikit-image 
+  - scikit-learn 
+  - pyqtgraph 
+  - tqdm 
+  - pytables 
+  - pandas
+  - bokeh 
+  - tensorflow 
+  - cupy
+  - opencv
+  - pillow
+  - openpyxl
