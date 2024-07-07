@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib
-# matplotlib.use("QtAgg")
-matplotlib.use("agg")
+matplotlib.use("QtAgg")
+# matplotlib.use("agg")
 # matplotlib.use("nbAgg")
 import matplotlib.pyplot as plt
 
