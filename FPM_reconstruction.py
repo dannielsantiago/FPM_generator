@@ -4,7 +4,6 @@ try:
 except:
     pass
 import PtyLab
-from PtyLab.io import getExampleDataFolder
 from PtyLab import Engines
 import logging
 
@@ -16,7 +15,21 @@ filePath = "datasets/2024_07_07/my_FPM_dataset.h5"
 experimentalData, reconstruction, params, monitor, engine, calib = PtyLab.easyInitialize(
     filePath, operationMode="FPM"
 )
-
+#match the indices of the frames to the encoder
+#
+# # Regular expression pattern to find a 4-digit number
+# pattern = r'\d{1,4}.tif'
+# numbers = r'\d{1,4}'
+# indices = []
+# for f in files:
+#     match = re.findall(pattern, f)
+#     for m in match:
+#         number = re.findall(numbers, m)[0]
+#         indices.append(int(number))
+#
+# indices = np.array(indices)-1 #zero-based index
+# #
+# encoder = encoder[indices]
 # experimentalData.magnnification = 4
 experimentalData.entrancePupilDiameter = None #entrance pupil diameter, defined in lens-based microscopes as the aperture diameter, reqquired for FPM
 experimentalData._setData()
@@ -29,11 +42,11 @@ reconstruction.initialProbe = "circ"
 reconstruction.initialObject = "upsampled"
 
 # %% FPM position calibration
-# calib.plot = True
-# calib.fit_mode ='SimilarityTransform'
-# calib.calibrateRadius = True
-# calib.fit_mode = "Translation"
-# calib.runCalibration()
+calib.plot = True
+calib.fit_mode ='SimilarityTransform'
+calib.calibrateRadius = True
+calib.fit_mode = "Translation"
+calib.runCalibration()
 
 # %% Prepare reconstruction post-calibration
 reconstruction.initializeObjectProbe()
