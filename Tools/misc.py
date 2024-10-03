@@ -882,19 +882,18 @@ def cropCenter(ptychogram, size, shift_x=None, shift_y=None):
         raise TypeError('Crop value is not valid. Int expected')
 
     x = ptychogram.shape[-1]
+    y = ptychogram.shape[-2]
     startx = x // 2 - (size // 2)
+    starty = y // 2 - (size // 2)
 
-    startx += 1
-    starty = startx + 0
+    startx += 1 if startx > 0 else 0
+    starty += 1 if starty > 0 else 0
     if shift_x is not None:
         startx += shift_x
     if shift_y is not None:
         starty += shift_y
-    print(starty)
-    print(startx)
-    ptychogram = ptychogram[..., starty: starty + size, startx: startx + size]
-    # ptychogram = ptychogram[..., starty: starty + size, startx: startx + size]
 
+    ptychogram = ptychogram[..., starty: starty + size, startx: startx + size]
 
     return ptychogram
 
