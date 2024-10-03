@@ -1,0 +1,22 @@
+name: EX01
+channels:
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy
+  - h5py
+  - matplotlib
+  - scipy
+  - scikit-image
+  - pyqtgraph
+  - tqdm
+  - pytables
+  - scikit-learn
+  - pandas
+  - bokeh
+  - cudatoolkit=12  # Allows any 12.x version
+  - pip
+  - pip:
+      - cupy-cuda12x  # Automatically picks the right cupy version for CUDA 12.x
