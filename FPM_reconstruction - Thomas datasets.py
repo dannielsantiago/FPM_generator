@@ -1,3 +1,4 @@
+import h5py
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -20,13 +21,18 @@ logging.basicConfig(level=logging.INFO)
 filePath = "datasets/Thomas_Aidukas/USAFTargetFPM.hdf5"
 filePath = "datasets/Thomas_Aidukas/LungCarcinomaFPM.hdf5"
 
+with h5py.File(filePath, 'r') as hf:
+    print(hf.keys())
+    print(hf.get('magnification')[()])
+    print(hf.get('NA')[()])
+
 
 experimentalData, reconstruction, params, monitor, engine, calib = PtyLab.easyInitialize(
     filePath, operationMode="FPM"
 )
 
 mean_img = np.mean(experimentalData.ptychogram,0)
-experimentalData.showptychogram()
+experimentalData.showPtychogram()
 # experimentalData.magnnification = 4
 # experimentalData.entrancePupilDiameter = None #entrance pupil diameter, defined in lens-based microscopes as the aperture diameter, reqquired for FPM
 # experimentalData._setData()

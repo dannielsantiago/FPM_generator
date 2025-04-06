@@ -1407,5 +1407,113 @@ def simulate_ccd_image(field, bit_depth=12, peak_photons=10000, quantum_efficien
 
     return adu_count.astype(np.uint16)
 
+def clip_my_sample_FT(my_sample_FT, p1, p2):
+    """
+    Pads my_sample_FT with zeros if necessary and then extracts the region defined by slices p1 and p2.
+
+    The output always has dimensions:
+       (p1.stop - p1.start, p2.stop - p2.start)
+
+    Parameters:
+    -----------
+    my_sample_FT : 2D numpy array
+        The input Fourier transform array.
+    p1, p2 : slice objects
+        Slices defining the region to extract along the first and second dimensions.
+
+    Returns:
+    --------
+    clipped : 2D numpy array
+        The extracted region (after zero padding, if needed) with the shape defined by p1 and p2.
+    """
+    # Original dimensions
+    M, N = my_sample_FT.shape
+
+    # Ensure slice indices are set (defaulting to 0 or dimension size if None)
+    start0 = p1.start if p1.start is not None else 0
+    stop0  = p1.stop  if p1.stop  is not None else M
+    start1 = p2.start if p2.start is not None else 0
+    stop1  = p2.stop  if p2.stop  is not None else N
+
+    # Compute required padding for dimension 0
+    pad_top    = max(0, -start0)
+    pad_bottom = max(0, stop0 - M)
+
+    # Compute required padding for dimension 1
+    pad_left  = max(0, -start1)
+    pad_right = max(0, stop1 - N)
+
+    # If any padding is required, apply it
+    if pad_top or pad_bottom or pad_left or pad_right:
+        my_sample_FT = np.pad(my_sample_FT,
+                              ((pad_top, pad_bottom), (pad_left, pad_right)),
+                              mode='constant', constant_values=0)
+
+    # Adjust slices: add the padding offsets to both start and stop
+    new_p1 = slice(start0 + pad_top, stop0 + pad_top)
+    new_p2 = slice(start1 + pad_left, stop1 + pad_left)
+
+    # Extract the region
+    clipped = my_sample_FT[new_p1, new_p2]
+    return clipped
+
+
+def spiral_indices(m, n):
+    """
+    Yields indices (i, j) for an m x n array in a spiral order starting at the center.
+    For even dimensions, the center is taken as (m//2, n//2).
+    """
+    total = m * n
+    count = 1
+    # Start at center
+    i, j = m // 2, n // 2
+    yield (i, j)
+
+    step = 1  # how many steps to take in the current direction
+    while count < total:
+        # move right: increase j
+        for _ in range(step):
+            j += 1
+            if 0 <= i < m and 0 <= j < n:
+                yield (i, j)
+                count += 1
+                if count >= total:
+                    break
+        if count >= total:
+            break
+
+        # move up: decrease i
+        for _ in range(step):
+            i -= 1
+            if 0 <= i < m and 0 <= j < n:
+                yield (i, j)
+                count += 1
+                if count >= total:
+                    break
+        step += 1
+        if count >= total:
+            break
+
+        # move left: decrease j
+        for _ in range(step):
+            j -= 1
+            if 0 <= i < m and 0 <= j < n:
+                yield (i, j)
+                count += 1
+                if count >= total:
+                    break
+        if count >= total:
+            break
+
+        # move down: increase i
+        for _ in range(step):
+            i += 1
+            if 0 <= i < m and 0 <= j < n:
+                yield (i, j)
+                count += 1
+                if count >= total:
+                    break
+        step += 1
+
 if __name__ == "__main__":
     pass

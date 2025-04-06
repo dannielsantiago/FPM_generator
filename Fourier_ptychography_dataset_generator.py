@@ -1,10 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
-# matplotlib.use("Qt5agg")
+matplotlib.use("Qt5agg")
 from PtyLab.utils.visualisation import show3Dslider
 from Tools.propagators import fft2c, ifft2c
-from Tools.misc import complex2rgb, circ_px, CMAP_DIFFRACTION, add_complex_colorwheel, wavelength_to_rgb, simulate_ccd_image
+from Tools.misc import *
 from Tools.zernike_polynomials import *
 from matplotlib.patches import Circle
 from Tools.multiprocessing_scripts import RS_diffraction_integral, RS_point_source_to_plane
@@ -22,7 +22,7 @@ my_object_RGB = plt.imread('imgs/PiotrZakrzewski_5197202.png')  # RGB image
 my_object_amp = np.mean(my_object_RGB, axis=-1)
 my_object_amp /= np.amax(my_object_amp)
 #
-max_apmplitude_decay = 0.4  # 0: transparent, 1:high-contrast
+max_apmplitude_decay = 0.1  # 0: transparent, 1:high-contrast
 my_object_amp = (1 - max_apmplitude_decay) + max_apmplitude_decay*my_object_amp
 # adds phase information
 my_object_phase = np.mean(my_object_RGB, axis=-1)
@@ -31,31 +31,37 @@ my_object_phase /= np.amax(my_object_phase)
 # constructs complex-valued object
 phase_offset = -0.20  # used to correct backgroung color in complex-valued plot
 my_object = my_object_amp*np.exp(-1j*2*np.pi*(my_object_phase+phase_offset))
-
+# my_object = ifft2c(zero_pad(fft2c(my_object)))
+# show3Dslider(abs(my_object_amp))
+# my_object = cropCenter(my_object, 1024)
 """
 Define experimental parameters
 """
 # Define my illumination grid (Matriz de LED)
-nLEDs_x = 10
-nLEDs_y = 10
-dl = 1e-3  # Led separation distance
-z0 = 15e-2  # Distance between LEDs and sample
-wavelength = 630e-9  #LED wavelength illumination
+nLEDs_x = 5
+nLEDs_y = 9
+dl = 5e-3  # Led separation distance
+z0 = 10e-2  # Distance between LEDs and sample
+wavelength = 625e-9  #LED wavelength illumination
 
-L_led_x = nLEDs_x * dl  # lateral extension of led matrix
-lx = np.linspace(-nLEDs_x/2, nLEDs_x/2, nLEDs_x)*dl
-ly = np.linspace(-nLEDs_y/2, nLEDs_y/2, nLEDs_y)*dl
+L_led_x = (nLEDs_x-1) * dl  # lateral extension of led matrix
+L_led_y = (nLEDs_y-1) * dl  # lateral extension of led matrix
+lx = np.linspace(-L_led_x/2, L_led_x/2, nLEDs_x)
+ly = np.linspace(-L_led_y/2, L_led_y/2, nLEDs_y)
 LX, LY = np.meshgrid(lx, ly)  # 2d- grid coordinates
 LED_color = wavelength_to_rgb(wavelength*1e9)
 LED_color_normalized = [x/255 for x in LED_color]  # Converted to 0-1 range, with alpha=1.0
 
 # Detection parameters
-NA = 0.2  # Numerical aperture
+NA = 0.08  # Numerical aperture
+magnification = 2
+dxd = 5.5e-6  # pixel size of detector
+
 No = my_object.shape[-1]  # Asumming square object
 # create lens pupil
 Np_inner = int(NA * No)
 # List of threshold values. This ensures that the final images are power of 2
-thresholds = [256, 512, 1024, 2048]
+thresholds = [128, 256, 512, 1024, 2048,4096]
 # Calculate Np based on the value of No and NA
 Np = int(NA * No)
 # Find the next threshold value greater than or equal to Np
@@ -65,29 +71,36 @@ for threshold in thresholds:
         break
 
 lens_pupil = circ_px(Np, Np_inner)
+#smooth the edges of the pupil via convolution
+lens_pupil = np.real(ifft2c(fft2c(lens_pupil) * fft2c(circ_px(Np, int(Np*0.2)))))  # smooth edges by convolution
+
 # optional, add aberrations to the lens pupil
-add_aberrations = False
+add_aberrations = True
 if add_aberrations:
     # Define Zernike coefficients (m, n, coefficient)
     coefficients = [
         (0, 0, 0),  # Piston
         (1, 1, 0),  # Tilt X
         (1, -1, 0),  # Tilt Y
-        (2, 0, 0),  # Defocus
-        (2, 2, 50),  # Astigmatism 45°
+        (0, 2, 2.5),  # Defocus
+        (2, 2, 0),  # Astigmatism 45°
         (2, -2, 0),  # Astigmatism 0°
     ]
     # Generate the combined Zernike polynomial
-    zernike_poly_combined = combined_zernike(coefficients, npix=Np, N=Np_inner)
+    # zernike_poly_combined = combined_zernike(coefficients, npix=Np, N=Np_inner)
+    zernike_poly_combined = combined_zernike(coefficients, npix=Np, N=Np)
+
     phase_aberration = zernike_poly_combined
     # Complex transmission function
     lens_pupil = lens_pupil*np.exp(1j * phase_aberration)
 
 
 #sample coordinates
-dx = wavelength/(2*NA)  # maximum resolution, this will serve as our pixel-size
+dx = dxd/magnification #pixel size defined by the magnification of the objective
 L = No * dx  # sample's lateral size in meters
 k0 = 2 * np.pi / wavelength
+pupil_diameter = NA*k0
+
 # real space coordinates
 x = np.arange(-No / 2, No / 2) * dx
 X, Y = np.meshgrid(x, x)
@@ -95,20 +108,14 @@ X, Y = np.meshgrid(x, x)
 f = np.arange(-No / 2, No / 2) / L
 FX, FY = np.meshgrid(f, f)
 
-# normalized k-space frequencies
-NA_factor = 1/NA  # custom factor to scale fourier space coordinates such that the max extent correspond to NA=1
-FX_norm = FX / (k0 / (2*np.pi)) * NA_factor
-FY_norm = FY / (k0 / (2*np.pi)) * NA_factor
-
 # spatial frequency shifts given by the LED positions
 # k-space
-kxs = LX / np.sqrt(LX ** 2 + LY ** 2 + z0 ** 2) * NA_factor
-kys = LY / np.sqrt(LX ** 2 + LY ** 2 + z0 ** 2) * NA_factor
+kxs = LX / np.sqrt(LX ** 2 + LY ** 2 + z0 ** 2)
+kys = LY / np.sqrt(LX ** 2 + LY ** 2 + z0 ** 2)
 
 # shifts in pixels units
 kxs_px = np.round(kxs*No/2, decimals=0).astype(int)
 kys_px = np.round(kys*No/2, decimals=0).astype(int)
-
 
 # computes the fourier spectrum of my sample
 my_sample_FT = fft2c(my_object)
@@ -116,11 +123,21 @@ my_sample_FT = fft2c(my_object)
 """
 Displays LED matrix, sample, and k-space shifts
 """
-if False:
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(12,3.5))
+if True:
+    # normalized k-space frequencies
+    NA_factor = 1 / NA  # custom factor to scale fourier space coordinates such that the max extent correspond to NA=1
+    FX_norm = FX / (k0 / (2 * np.pi)) * NA_factor
+    FY_norm = FY / (k0 / (2 * np.pi)) * NA_factor
+
+    fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(12,3.5))
     ax1 = ax[0]
     ax2 = ax[1]
     ax3 = ax[2]
+    ax4 = ax[3]
+
+    ax4.set_title('Commplex Pupil')
+    ax4.imshow(complex2rgb(lens_pupil))
+    ax4.set_axis_off()
 
     ax1.set_title('LED matrix')
     color_list = [(0.5,0.5,0.5,1)]*nLEDs_x*nLEDs_y
@@ -132,8 +149,9 @@ if False:
     ax1.grid(True, alpha=0.5)
 
     ax2.set_title('Complex-valued object')
-    ax2.pcolormesh(X * 1e3, Y * 1e3, np.ones(shape=(No, No)), color=complex2rgb(my_object).reshape(-1, 3) / 255)
-    add_complex_colorwheel(fig, ax2, loc=4, pad=0.02)
+    # ax2.pcolormesh(X * 1e3, Y * 1e3, np.ones(shape=(No, No)), color=complex2rgb(my_object).reshape(-1, 3) / 255)
+    # add_complex_colorwheel(fig, ax2, loc=4, pad=0.02)
+    ax2.imshow(complex2rgb(my_object))
     ax2.set_aspect('equal')
     ax2.set_xlabel('(mm)')
     ax2.set_ylabel('(mm)')
@@ -160,8 +178,21 @@ that array of images we called a ptychogram
 """
 ptychogram = np.zeros(shape=(nLEDs_x*nLEDs_y, Np, Np))
 
-plane_wave_simulation = True
+spiral_order = True
+if spiral_order:
+    s_indices = list(spiral_indices(nLEDs_y, nLEDs_x))
+    # Option 1: Create new 1D arrays in spiral order to store positions of LEDs as encoder
+    LX = np.array([LX[i, j] for i, j in s_indices])
+    LY = np.array([LY[i, j] for i, j in s_indices])
+    encoder = np.stack((LY, LX), axis=-1)   # diffracted field positions
+    kxs_px = np.array([kxs_px[i, j] for i, j in s_indices])
+    kys_px = np.array([kys_px[i, j] for i, j in s_indices])
+else:
+    #default row major sequential order of positions
+    encoder = np.stack((LY.flatten(), LX.flatten()), axis=-1)   # diffracted field positions
 
+
+plane_wave_simulation = True
 if plane_wave_simulation:
     for index, (kxi, kyi) in enumerate(zip(kxs_px.flatten(), kys_px.flatten())):
         print(f'generating frame {index}/{int(nLEDs_x*nLEDs_y)}', end='\r')
@@ -170,9 +201,10 @@ if plane_wave_simulation:
         p2 = slice(int(No / 2 - Np / 2 - kxi), int(No / 2 + Np / 2 - kxi))
         # clip Fourier space and apply with the lens pupil that can include aberrations
         my_sample_FT_clipped = my_sample_FT[p1, p2] * lens_pupil
+        # my_sample_FT_clipped = clip_my_sample_FT(my_sample_FT, p1, p2) * lens_pupil
         # FFT of the clipped array and computes the intensity of the field
         # i.e. what the camera sees:
-        my_image = fft2c(my_sample_FT_clipped)
+        my_image = ifft2c(my_sample_FT_clipped)
         my_detected_image = np.abs(my_image)**2
 
         # additionally here one can define the noise parameters, photon-count, and bith-depth for discretization
@@ -183,8 +215,10 @@ if plane_wave_simulation:
                                                           quantum_efficiency=0.7,
                                                           quantum_well=None,
                                                           readout_noise=10,
-                                                          dc_level=100)
+                                                          dc_level=0)
         ptychogram[index, ...] = my_detected_image_with_noise
+
+
 else:
     for index, (LED_coord_x, LED_coord_y) in enumerate(zip(LX.flatten(), LY.flatten())):
         # evaluate RS integral to compute illumination wavefront that will interact with the sample
@@ -200,7 +234,7 @@ else:
         # create slices to select clipped area by the NA in the fourier space
         p1 = slice(int(No / 2 - Np / 2), int(No / 2 + Np / 2))
         p2 = slice(int(No / 2 - Np / 2), int(No / 2 + Np / 2))
-
+        my_sample_FT_clipped = my_sample_FT[p1, p2]
         # clip Fourier space and apply with the lens pupil that can include aberrations
         my_sample_FT_clipped = my_sample_FT[p1, p2] * lens_pupil
 
@@ -237,10 +271,6 @@ year = datetime.date.today().year
 folder = f'datasets/{year}_{month:02}_{day:02}'
 os.makedirs(folder, exist_ok=True)
 
-dxd = 6.5e-6  # pixel size of detector
-magnification = dxd/dx # magnification, used for FPM computations of dxp
-entrancePupilDiameter = 0.5e-3  #entrance pupil diameter, defined in lens-based microscopes as the aperture diameter, reqquired for FPM
-encoder = np.stack((kys.flatten()/NA_factor, kxs.flatten()/NA_factor), axis=0)   # diffracted field positions
 
 #show ptychogram
 show3Dslider(ptychogram)
@@ -254,6 +284,7 @@ with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     hf.create_dataset('encoder', data=encoder)
     hf.create_dataset('magnification', data=magnification)
     hf.create_dataset('NA', data=NA)
-    hf.create_dataset('entrancePupilDiameter', data=entrancePupilDiameter)
+    # hf.create_dataset('entrancePupilDiameter', data=entrancePupilDiameter)
     hf.create_dataset('orientation', data=(0,))
 
+print(f'file saved in {folder}/my_FPM_dataset.h5')

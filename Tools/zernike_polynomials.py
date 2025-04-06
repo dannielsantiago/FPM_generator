@@ -45,8 +45,8 @@ def combined_zernike(coefficients, npix=256, N=512):
     """
     assert N >= npix, "N should be greater than or equal to npix"
 
-    x = np.linspace(-1, 1, npix)
-    y = np.linspace(-1, 1, npix)
+    x = np.linspace(-1, 1, npix, endpoint=False)
+    y = np.linspace(-1, 1, npix, endpoint=False)
     X, Y = np.meshgrid(x, y)
     rho = np.sqrt(X ** 2 + Y ** 2)
     theta = np.arctan2(Y, X)
