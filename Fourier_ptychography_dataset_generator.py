@@ -44,14 +44,6 @@ dl = 5e-3  # Led separation distance
 z0 = 10e-2  # Distance between LEDs and sample
 wavelength = 625e-9  #LED wavelength illumination
 
-L_led_x = (nLEDs_x-1) * dl  # lateral extension of led matrix
-L_led_y = (nLEDs_y-1) * dl  # lateral extension of led matrix
-lx = np.linspace(-L_led_x/2, L_led_x/2, nLEDs_x)
-ly = np.linspace(-L_led_y/2, L_led_y/2, nLEDs_y)
-LX, LY = np.meshgrid(lx, ly)  # 2d- grid coordinates
-LED_color = wavelength_to_rgb(wavelength*1e9)
-LED_color_normalized = [x/255 for x in LED_color]  # Converted to 0-1 range, with alpha=1.0
-
 # Detection parameters
 NA = 0.08  # Numerical aperture
 magnification = 2
@@ -63,7 +55,6 @@ Np_inner = int(NA * No)
 # List of threshold values. This ensures that the final images are power of 2
 thresholds = [128, 256, 512, 1024, 2048,4096]
 # Calculate Np based on the value of No and NA
-Np = int(NA * No)
 # Find the next threshold value greater than or equal to Np
 for threshold in thresholds:
     if Np_inner < threshold:
@@ -87,7 +78,6 @@ if add_aberrations:
         (2, -2, 0),  # Astigmatism 0°
     ]
     # Generate the combined Zernike polynomial
-    # zernike_poly_combined = combined_zernike(coefficients, npix=Np, N=Np_inner)
     zernike_poly_combined = combined_zernike(coefficients, npix=Np, N=Np)
 
     phase_aberration = zernike_poly_combined
@@ -95,18 +85,15 @@ if add_aberrations:
     lens_pupil = lens_pupil*np.exp(1j * phase_aberration)
 
 
-#sample coordinates
-dx = dxd/magnification #pixel size defined by the magnification of the objective
-L = No * dx  # sample's lateral size in meters
-k0 = 2 * np.pi / wavelength
-pupil_diameter = NA*k0
+#creates 2d-arrays for the positions of each LED
+L_led_x = (nLEDs_x-1) * dl  # lateral extension of led matrix
+L_led_y = (nLEDs_y-1) * dl  # lateral extension of led matrix
+lx = np.linspace(-L_led_x/2, L_led_x/2, nLEDs_x)
+ly = np.linspace(-L_led_y/2, L_led_y/2, nLEDs_y)
+LX, LY = np.meshgrid(lx, ly)  # 2d- grid coordinates
 
-# real space coordinates
-x = np.arange(-No / 2, No / 2) * dx
-X, Y = np.meshgrid(x, x)
-# fourier space coordinates
-f = np.arange(-No / 2, No / 2) / L
-FX, FY = np.meshgrid(f, f)
+# LED_color = wavelength_to_rgb(wavelength*1e9)
+# LED_color_normalized = [x/255 for x in LED_color]  # Converted to 0-1 range, with alpha=1.0
 
 # spatial frequency shifts given by the LED positions
 # k-space
@@ -124,6 +111,18 @@ my_sample_FT = fft2c(my_object)
 Displays LED matrix, sample, and k-space shifts
 """
 if True:
+    # sample coordinates
+    dx = dxd / magnification  # pixel size defined by the magnification of the objective
+    L = No * dx  # sample's lateral size in meters
+    k0 = 2 * np.pi / wavelength
+
+    # real space coordinates of sample
+    x = np.arange(-No / 2, No / 2) * dx
+    X, Y = np.meshgrid(x, x)
+
+    # fourier space coordinates of sample
+    f = np.arange(-No / 2, No / 2) / L
+    FX, FY = np.meshgrid(f, f)
     # normalized k-space frequencies
     NA_factor = 1 / NA  # custom factor to scale fourier space coordinates such that the max extent correspond to NA=1
     FX_norm = FX / (k0 / (2 * np.pi)) * NA_factor
@@ -149,9 +148,9 @@ if True:
     ax1.grid(True, alpha=0.5)
 
     ax2.set_title('Complex-valued object')
-    # ax2.pcolormesh(X * 1e3, Y * 1e3, np.ones(shape=(No, No)), color=complex2rgb(my_object).reshape(-1, 3) / 255)
-    # add_complex_colorwheel(fig, ax2, loc=4, pad=0.02)
-    ax2.imshow(complex2rgb(my_object))
+    ax2.pcolormesh(X * 1e3, Y * 1e3, np.ones(shape=(No, No)), color=complex2rgb(my_object).reshape(-1, 3) / 255)
+    add_complex_colorwheel(fig, ax2, loc=4, pad=0.02)
+    # ax2.imshow(complex2rgb(my_object))
     ax2.set_aspect('equal')
     ax2.set_xlabel('(mm)')
     ax2.set_ylabel('(mm)')
@@ -170,6 +169,8 @@ if True:
 
     fig.tight_layout()
     fig.show()
+    fig.canvas.draw()
+    fig.canvas.flush_events()
 
 """
 loops through the k-shifts and extract these regions
@@ -251,7 +252,7 @@ else:
                                                           quantum_efficiency=0.7,
                                                           quantum_well=None,
                                                           readout_noise=10,
-                                                          dc_level=100)
+                                                          dc_level=0)
 
         ptychogram[index, ...] = my_detected_image_with_noise
 
