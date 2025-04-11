@@ -12,6 +12,9 @@ import imageio.v2 as imageio
 import datetime
 import os
 import h5py
+import pyqtgraph as pg
+pg.setConfigOption('imageAxisOrder', 'row-major')  # Transpose row-col for display plots
+
 
 """
 Load image as sample
@@ -31,29 +34,40 @@ my_object_phase /= np.amax(my_object_phase)
 # constructs complex-valued object
 phase_offset = -0.20  # used to correct backgroung color in complex-valued plot
 my_object = my_object_amp*np.exp(-1j*2*np.pi*(my_object_phase+phase_offset))
-# my_object = ifft2c(zero_pad(fft2c(my_object)))
-# show3Dslider(abs(my_object_amp))
-# my_object = cropCenter(my_object, 1024)
+# Keep the dimention of my_object to 2048x2048. To have the same reference for all simulations
+
 """
 Define experimental parameters
 """
-# Define my illumination grid (Matriz de LED)
-nLEDs_x = 5
+#Define my illumiation NA
+NA_illu = 0.5 #this should be larger than detection NA
+NA = 0.05  # detection NA [0.01, 0.05, 0.1, 0.2]
+#defines how many LEDs we want to use. A lower number of LEDs will result in a lower overlap.
+#we need to investigate what is the min. number of LEDs to have a good reconstuction for a given NA_illu
+#usar numeros impares para que siempre haya un LED en la posicion 0,0
+nLEDs_x = 9
 nLEDs_y = 9
-dl = 5e-3  # Led separation distance
-z0 = 10e-2  # Distance between LEDs and sample
-wavelength = 625e-9  #LED wavelength illumination
 
-# Detection parameters
-NA = 0.08  # Numerical aperture
+#Define the lateral size of my LED matrix
+LM = 0.1 # let's say 10cm, adjust it to the experimental one
+#computes the needed z0 to obtain the desired NA_illu
+z0 = LM/(2*NA_illu)
+#computes the led separation distance
+dlx = LM/(nLEDs_x-1)  # Led separation distance along x direction
+dly = LM/(nLEDs_y-1) #led separation distance along y direction
+wavelength = 450e-9  #LED wavelength illumination
+k0 = 2*np.pi/wavelength  #wavenumber
+#additional parameters, not so relevant for simulations, but for experimental datasets
 magnification = 2
 dxd = 5.5e-6  # pixel size of detector
+dx = dxd / magnification  # pixel size defined by the magnification of the objective
+No = my_object.shape[-1]  # number of pixels of my object - Asumming square object
+entrancePupilDiameter = NA*No  #pupil size in pixels
 
-No = my_object.shape[-1]  # Asumming square object
 # create lens pupil
 Np_inner = int(NA * No)
 # List of threshold values. This ensures that the final images are power of 2
-thresholds = [128, 256, 512, 1024, 2048,4096]
+thresholds = [32, 64, 128, 256, 512, 1024, 2048,4096]
 # Calculate Np based on the value of No and NA
 # Find the next threshold value greater than or equal to Np
 for threshold in thresholds:
@@ -86,8 +100,8 @@ if add_aberrations:
 
 
 #creates 2d-arrays for the positions of each LED
-L_led_x = (nLEDs_x-1) * dl  # lateral extension of led matrix
-L_led_y = (nLEDs_y-1) * dl  # lateral extension of led matrix
+L_led_x = (nLEDs_x-1) * dlx  # lateral extension of led matrix
+L_led_y = (nLEDs_y-1) * dly  # lateral extension of led matrix
 lx = np.linspace(-L_led_x/2, L_led_x/2, nLEDs_x)
 ly = np.linspace(-L_led_y/2, L_led_y/2, nLEDs_y)
 LX, LY = np.meshgrid(lx, ly)  # 2d- grid coordinates
@@ -110,11 +124,9 @@ my_sample_FT = fft2c(my_object)
 """
 Displays LED matrix, sample, and k-space shifts
 """
-if True:
+if False:
     # sample coordinates
-    dx = dxd / magnification  # pixel size defined by the magnification of the objective
     L = No * dx  # sample's lateral size in meters
-    k0 = 2 * np.pi / wavelength
 
     # real space coordinates of sample
     x = np.arange(-No / 2, No / 2) * dx
@@ -125,8 +137,8 @@ if True:
     FX, FY = np.meshgrid(f, f)
     # normalized k-space frequencies
     NA_factor = 1 / NA  # custom factor to scale fourier space coordinates such that the max extent correspond to NA=1
-    FX_norm = FX / (k0 / (2 * np.pi)) * NA_factor
-    FY_norm = FY / (k0 / (2 * np.pi)) * NA_factor
+    FX_norm = FX / np.amax(FX)
+    FY_norm = FY / np.amax(FX)
 
     fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(12,3.5))
     ax1 = ax[0]
@@ -148,9 +160,9 @@ if True:
     ax1.grid(True, alpha=0.5)
 
     ax2.set_title('Complex-valued object')
-    ax2.pcolormesh(X * 1e3, Y * 1e3, np.ones(shape=(No, No)), color=complex2rgb(my_object).reshape(-1, 3) / 255)
-    add_complex_colorwheel(fig, ax2, loc=4, pad=0.02)
-    # ax2.imshow(complex2rgb(my_object))
+    # ax2.pcolormesh(X * 1e3, Y * 1e3, np.ones(shape=(No, No)), color=complex2rgb(my_object).reshape(-1, 3) / 255)
+    # add_complex_colorwheel(fig, ax2, loc=4, pad=0.02)
+    ax2.imshow(complex2rgb(my_object))
     ax2.set_aspect('equal')
     ax2.set_xlabel('(mm)')
     ax2.set_ylabel('(mm)')
@@ -201,8 +213,8 @@ if plane_wave_simulation:
         p1 = slice(int(No / 2 - Np / 2 - kyi), int(No / 2 + Np / 2 - kyi))
         p2 = slice(int(No / 2 - Np / 2 - kxi), int(No / 2 + Np / 2 - kxi))
         # clip Fourier space and apply with the lens pupil that can include aberrations
-        my_sample_FT_clipped = my_sample_FT[p1, p2] * lens_pupil
-        # my_sample_FT_clipped = clip_my_sample_FT(my_sample_FT, p1, p2) * lens_pupil
+        # my_sample_FT_clipped = my_sample_FT[p1, p2] * lens_pupil
+        my_sample_FT_clipped = clip_my_sample_FT(my_sample_FT, p1, p2) * lens_pupil
         # FFT of the clipped array and computes the intensity of the field
         # i.e. what the camera sees:
         my_image = ifft2c(my_sample_FT_clipped)
@@ -274,7 +286,7 @@ os.makedirs(folder, exist_ok=True)
 
 
 #show ptychogram
-show3Dslider(ptychogram)
+# show3Dslider(ptychogram)
 
 with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     hf.create_dataset('ptychogram', data=ptychogram)
@@ -285,7 +297,7 @@ with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     hf.create_dataset('encoder', data=encoder)
     hf.create_dataset('magnification', data=magnification)
     hf.create_dataset('NA', data=NA)
-    # hf.create_dataset('entrancePupilDiameter', data=entrancePupilDiameter)
+    hf.create_dataset('entrancePupilDiameter', data=entrancePupilDiameter)
     hf.create_dataset('orientation', data=(0,))
 
 print(f'file saved in {folder}/my_FPM_dataset.h5')
