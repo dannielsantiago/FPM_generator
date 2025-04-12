@@ -14,6 +14,7 @@ import os
 import h5py
 import pyqtgraph as pg
 pg.setConfigOption('imageAxisOrder', 'row-major')  # Transpose row-col for display plots
+import gc
 
 
 """
@@ -35,15 +36,23 @@ my_object_phase /= np.amax(my_object_phase)
 phase_offset = -0.20  # used to correct backgroung color in complex-valued plot
 my_object = my_object_amp*np.exp(-1j*2*np.pi*(my_object_phase+phase_offset))
 # Keep the dimention of my_object to 2048x2048. To have the same reference for all simulations
+#clean variables
+del my_object_phase
+del my_object_amp
+del my_object_RGB
+gc.collect()
 
 """
 Define experimental parameters
 """
+NA = 0.038  # detection NA [0.01, 0.019, 0.038, 0.075, 0.15]
 #Define my illumiation NA
-NA_illu = 0.5 #this should be larger than detection NA
-NA = 0.05  # detection NA [0.01, 0.05, 0.1, 0.2]
+#this should be larger than detection NA
+#to have comparable results, each simulation will try to retrieve a 3x larger NA
+NA_illu = 3*NA
 #defines how many LEDs we want to use. A lower number of LEDs will result in a lower overlap.
-#we need to investigate what is the min. number of LEDs to have a good reconstuction for a given NA_illu
+# we need to investigate what is the min. number of LEDs to have a good reconstuction for a given combination of
+# NA_illu and NA detection
 #usar numeros impares para que siempre haya un LED en la posicion 0,0
 nLEDs_x = 9
 nLEDs_y = 9
@@ -62,7 +71,7 @@ magnification = 2
 dxd = 5.5e-6  # pixel size of detector
 dx = dxd / magnification  # pixel size defined by the magnification of the objective
 No = my_object.shape[-1]  # number of pixels of my object - Asumming square object
-entrancePupilDiameter = NA*No  #pupil size in pixels
+entrancePupilDiameter = NA*No*dxd  #pupil size in pixels
 
 # create lens pupil
 Np_inner = int(NA * No)
@@ -124,7 +133,7 @@ my_sample_FT = fft2c(my_object)
 """
 Displays LED matrix, sample, and k-space shifts
 """
-if False:
+if True:
     # sample coordinates
     L = No * dx  # sample's lateral size in meters
 
@@ -171,8 +180,14 @@ if False:
     ax3.pcolormesh(FX_norm, FY_norm, np.log(abs(my_sample_FT) + 0.5), cmap=CMAP_DIFFRACTION)
     # Add a dashed circle to represnet the cutted region by the NA of the lens
     circle_radius = Np_inner / No
-    circle = Circle((0, 0), circle_radius, fill=False, linestyle='--', edgecolor='white', linewidth=2, label='NA')
+    #adds circles to each center point in Fourier space
+    for i, (kx_i, ky_i) in enumerate(zip(kxs.flatten(), kys.flatten())):
+        temp_circle = Circle((kx_i, ky_i), circle_radius, fill=False, linestyle='-', edgecolor='white', linewidth=1)
+        ax3.add_patch(temp_circle)
+
+    circle = Circle((0, 0), circle_radius, fill=False, linestyle='--', edgecolor='red', linewidth=1, label='NA')
     ax3.add_patch(circle)
+
     ax3.scatter(kxs, kys, s=10 ,marker='.', c='yellow', label='k-shifts')
     ax3.legend()
     ax3.set_aspect('equal')
@@ -183,6 +198,14 @@ if False:
     fig.show()
     fig.canvas.draw()
     fig.canvas.flush_events()
+    #clean varialbes from memory
+    del FX
+    del FX_norm
+    del FY
+    del FY_norm
+    del X
+    del Y
+    gc.collect()
 
 """
 loops through the k-shifts and extract these regions
@@ -284,10 +307,6 @@ year = datetime.date.today().year
 folder = f'datasets/{year}_{month:02}_{day:02}'
 os.makedirs(folder, exist_ok=True)
 
-
-#show ptychogram
-# show3Dslider(ptychogram)
-
 with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     hf.create_dataset('ptychogram', data=ptychogram)
     hf.create_dataset('wavelength', data=wavelength)
@@ -301,3 +320,15 @@ with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     hf.create_dataset('orientation', data=(0,))
 
 print(f'file saved in {folder}/my_FPM_dataset.h5')
+
+
+#show ptychogram. This is the input dataset that will be used to reconstruct a larger image
+show3Dslider(ptychogram)
+
+
+#clean variables and memory
+del ptychogram
+del my_object
+del my_sample_FT
+gc.collect()
+
