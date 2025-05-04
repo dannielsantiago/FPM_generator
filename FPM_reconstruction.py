@@ -43,7 +43,7 @@ calib.plot = True
 calib.fit_mode ='SimilarityTransform'
 calib.calibrateRadius = True
 calib.fit_mode = "Translation"
-# calib.runCalibration()
+calib.runCalibration()
 
 # %% Prepare reconstruction post-calibration
 reconstruction.initializeObjectProbe()
