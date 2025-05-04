@@ -21,20 +21,20 @@ import gc
 Load image as sample
 """
 # Load an image and normalize it
-my_object_RGB = plt.imread('imgs/PiotrZakrzewski_5197202.png')  # RGB image
+my_object_RGB = plt.imread('imgs/TCGA.jpg')  # RGB image
 # normalize its amplitude
 my_object_amp = np.mean(my_object_RGB, axis=-1)
 my_object_amp /= np.amax(my_object_amp)
-#
-max_apmplitude_decay = 0.1  # 0: transparent, 1:high-contrast
-my_object_amp = (1 - max_apmplitude_decay) + max_apmplitude_decay*my_object_amp
+
 # adds phase information
-my_object_phase = np.mean(my_object_RGB, axis=-1)
-my_object_phase = abs(my_object_phase - np.amax(my_object_phase))
-my_object_phase /= np.amax(my_object_phase)
+max_phase_variation = np.pi
+stepness=10
+my_object_phase = abs(1 - my_object_amp)
+my_object_phase = max_phase_variation * 0.5 * (1 + np.tanh(stepness * (my_object_phase - 0.5)))
+# my_object_phase = np.clip(my_object_phase, 0, max_phase_variation)
+
 # constructs complex-valued object
-phase_offset = -0.20  # used to correct backgroung color in complex-valued plot
-my_object = my_object_amp*np.exp(-1j*2*np.pi*(my_object_phase+phase_offset))
+my_object = my_object_amp*np.exp(-1j*my_object_phase)
 # Keep the dimention of my_object to 2048x2048. To have the same reference for all simulations
 #clean variables
 del my_object_phase
@@ -45,17 +45,17 @@ gc.collect()
 """
 Define experimental parameters
 """
-NA = 0.038  # detection NA [0.01, 0.019, 0.038, 0.075, 0.15]
+NA = 0.0039 #048  # detection NA: 0.0039-->32x32, 0.00781-->64x64, 0.0156-->128x128, 0.03125-->256x256, 0.0625-->512x512, 0.125-->1024x1024
 #Define my illumiation NA
 #this should be larger than detection NA
 #to have comparable results, each simulation will try to retrieve a 3x larger NA
-NA_illu = 3*NA
+NA_illu = 6*NA
 #defines how many LEDs we want to use. A lower number of LEDs will result in a lower overlap.
 # we need to investigate what is the min. number of LEDs to have a good reconstuction for a given combination of
 # NA_illu and NA detection
 #usar numeros impares para que siempre haya un LED en la posicion 0,0
-nLEDs_x = 9
-nLEDs_y = 9
+nLEDs_x = 15
+nLEDs_y = 15
 
 #Define the lateral size of my LED matrix
 LM = 0.1 # let's say 10cm, adjust it to the experimental one
@@ -71,32 +71,32 @@ magnification = 2
 dxd = 5.5e-6  # pixel size of detector
 dx = dxd / magnification  # pixel size defined by the magnification of the objective
 No = my_object.shape[-1]  # number of pixels of my object - Asumming square object
-entrancePupilDiameter = NA*No*dxd  #pupil size in pixels
-
 # create lens pupil
-Np_inner = int(NA * No)
+Np_inner = int(2 * NA * No) #Diameter in pixels
 # List of threshold values. This ensures that the final images are power of 2
 thresholds = [32, 64, 128, 256, 512, 1024, 2048,4096]
 # Calculate Np based on the value of No and NA
 # Find the next threshold value greater than or equal to Np
 for threshold in thresholds:
-    if Np_inner < threshold:
+    if 2*Np_inner < threshold:
         Np = threshold
         break
 
 lens_pupil = circ_px(Np, Np_inner)
 #smooth the edges of the pupil via convolution
-lens_pupil = np.real(ifft2c(fft2c(lens_pupil) * fft2c(circ_px(Np, int(Np*0.2)))))  # smooth edges by convolution
+lens_pupil = np.real(ifft2c(fft2c(lens_pupil) * fft2c(circ_px(Np, int(Np*0.2)))))**4  # smooth edges by convolution
+lens_pupil /=np.amax(lens_pupil)
+
 
 # optional, add aberrations to the lens pupil
-add_aberrations = True
+add_aberrations = False
 if add_aberrations:
     # Define Zernike coefficients (m, n, coefficient)
     coefficients = [
         (0, 0, 0),  # Piston
         (1, 1, 0),  # Tilt X
         (1, -1, 0),  # Tilt Y
-        (0, 2, 2.5),  # Defocus
+        (0, 2, 0.25),  # Defocus
         (2, 2, 0),  # Astigmatism 45°
         (2, -2, 0),  # Astigmatism 0°
     ]
@@ -133,7 +133,7 @@ my_sample_FT = fft2c(my_object)
 """
 Displays LED matrix, sample, and k-space shifts
 """
-if True:
+if False:
     # sample coordinates
     L = No * dx  # sample's lateral size in meters
 
@@ -179,7 +179,7 @@ if True:
     ax3.set_title('Fourier space')
     ax3.pcolormesh(FX_norm, FY_norm, np.log(abs(my_sample_FT) + 0.5), cmap=CMAP_DIFFRACTION)
     # Add a dashed circle to represnet the cutted region by the NA of the lens
-    circle_radius = Np_inner / No
+    circle_radius = 0.5 * Np_inner / No
     #adds circles to each center point in Fourier space
     for i, (kx_i, ky_i) in enumerate(zip(kxs.flatten(), kys.flatten())):
         temp_circle = Circle((kx_i, ky_i), circle_radius, fill=False, linestyle='-', edgecolor='white', linewidth=1)
@@ -199,13 +199,13 @@ if True:
     fig.canvas.draw()
     fig.canvas.flush_events()
     #clean varialbes from memory
-    del FX
-    del FX_norm
-    del FY
-    del FY_norm
-    del X
-    del Y
-    gc.collect()
+    # del FX
+    # del FX_norm
+    # del FY
+    # del FY_norm
+    # del X
+    # del Y
+    # gc.collect()
 
 """
 loops through the k-shifts and extract these regions
@@ -227,11 +227,23 @@ else:
     #default row major sequential order of positions
     encoder = np.stack((LY.flatten(), LX.flatten()), axis=-1)   # diffracted field positions
 
+conv = (dx * Np / wavelength)
+# encoder_px = np.stack((kys_px, kxs_px), axis=-1)
+encoder_px2 = np.round( conv * encoder / np.sqrt(encoder[:,0] ** 2 + encoder[:,1] ** 2 + z0**2)[..., None])
+
+#Calculates overlap between detected fourier patches
+diffs = np.diff(encoder_px2, axis=0)
+distances = np.hypot(diffs[:, 0], diffs[:, 1])
+average_distance = distances.mean() # average distance
+
+overlap_linear = linear_overlap(Np_inner, average_distance)
+overlap_area = area_overlap(Np_inner, average_distance)
 
 plane_wave_simulation = True
 if plane_wave_simulation:
-    for index, (kxi, kyi) in enumerate(zip(kxs_px.flatten(), kys_px.flatten())):
-        print(f'generating frame {index}/{int(nLEDs_x*nLEDs_y)}', end='\r')
+    # for index, (kxi, kyi) in enumerate(zip(kxs_px.flatten(), kys_px.flatten())):
+    for index, (kyi, kxi) in enumerate(encoder_px2):
+        print(f'generating frame {index}/{int(nLEDs_x * nLEDs_y)}', end='\r')
         #create slices to select clipped area by the NA in the fourier space
         p1 = slice(int(No / 2 - Np / 2 - kyi), int(No / 2 + Np / 2 - kyi))
         p2 = slice(int(No / 2 - Np / 2 - kxi), int(No / 2 + Np / 2 - kxi))
@@ -240,7 +252,7 @@ if plane_wave_simulation:
         my_sample_FT_clipped = clip_my_sample_FT(my_sample_FT, p1, p2) * lens_pupil
         # FFT of the clipped array and computes the intensity of the field
         # i.e. what the camera sees:
-        my_image = ifft2c(my_sample_FT_clipped)
+        my_image = fft2c(my_sample_FT_clipped)
         my_detected_image = np.abs(my_image)**2
 
         # additionally here one can define the noise parameters, photon-count, and bith-depth for discretization
@@ -252,32 +264,34 @@ if plane_wave_simulation:
                                                           quantum_well=None,
                                                           readout_noise=10,
                                                           dc_level=0)
-        ptychogram[index, ...] = my_detected_image_with_noise
-
+        # ptychogram[index, ...] = my_detected_image_with_noise
+        ptychogram[index, ...] = my_detected_image#_with_noise
 
 else:
+    # create slices to select clipped area by the NA in the fourier space
+    p1 = slice(int(No / 2 - Np / 2), int(No / 2 + Np / 2))
+    p2 = slice(int(No / 2 - Np / 2), int(No / 2 + Np / 2))
+
     for index, (LED_coord_x, LED_coord_y) in enumerate(zip(LX.flatten(), LY.flatten())):
+        print(f'generating frame {index}/{int(nLEDs_x * nLEDs_y)}', end='\r')
         # evaluate RS integral to compute illumination wavefront that will interact with the sample
         illu_wavefront = RS_point_source_to_plane(LED_coord_x, LED_coord_y, X, Y, z0, wavelength, )
         # Calculate the total energy
-        total_energy = np.sum(np.square(np.abs(illu_wavefront)))
-        # Normalize the wavefront
-        illu_wavefront = illu_wavefront / np.sqrt(total_energy)
+        # total_energy = np.sum(np.square(np.abs(illu_wavefront)))
+        # # Normalize the wavefront
+        # illu_wavefront = illu_wavefront / np.sqrt(total_energy)
         # computes FFT of object*illumination
         my_object_illuminated = my_object * illu_wavefront
         my_sample_FT = fft2c(my_object_illuminated)
 
-        # create slices to select clipped area by the NA in the fourier space
-        p1 = slice(int(No / 2 - Np / 2), int(No / 2 + Np / 2))
-        p2 = slice(int(No / 2 - Np / 2), int(No / 2 + Np / 2))
         my_sample_FT_clipped = my_sample_FT[p1, p2]
         # clip Fourier space and apply with the lens pupil that can include aberrations
-        my_sample_FT_clipped = my_sample_FT[p1, p2] * lens_pupil
+        my_sample_FT_clipped = my_sample_FT_clipped * lens_pupil
 
         # FFT of the clipped array and computes the intensity of the field
         # i.e. what the camera sees:
         my_image = fft2c(my_sample_FT_clipped)
-        my_detected_image = np.square(np.abs(my_image))
+        my_detected_image = np.abs(my_image)**2
 
         # additionally here one can define the noise parameters, photon-count, and bith-depth for discretization
         # of the measured image
@@ -289,7 +303,7 @@ else:
                                                           readout_noise=10,
                                                           dc_level=0)
 
-        ptychogram[index, ...] = my_detected_image_with_noise
+        ptychogram[index, ...] = my_detected_image#_with_noise
 
 save_gif = False
 if save_gif:
@@ -307,6 +321,12 @@ year = datetime.date.today().year
 folder = f'datasets/{year}_{month:02}_{day:02}'
 os.makedirs(folder, exist_ok=True)
 
+entrancePupilDiameter = 2*NA*No*dx
+# entrancePupilDiameter = 2 * Np * NA * dx**2 / wavelength
+# NA_recon = (entrancePupilDiameter*wavelength/ (2 * dx**2 * Np))
+# z02 = z0*NA/NA_recon
+# Z03 = d/(2*NA_recon)
+
 with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     hf.create_dataset('ptychogram', data=ptychogram)
     hf.create_dataset('wavelength', data=wavelength)
@@ -315,9 +335,10 @@ with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     hf.create_dataset('zled', data=(z0,), dtype='f')
     hf.create_dataset('encoder', data=encoder)
     hf.create_dataset('magnification', data=magnification)
-    hf.create_dataset('NA', data=NA)
-    hf.create_dataset('entrancePupilDiameter', data=entrancePupilDiameter)
+    # hf.create_dataset('NA', data=NA)
+    # hf.create_dataset('entrancePupilDiameter', data=entrancePupilDiameter)
     hf.create_dataset('orientation', data=(0,))
+    hf.create_dataset('encoder_px', data=encoder_px)
 
 print(f'file saved in {folder}/my_FPM_dataset.h5')
 
@@ -327,8 +348,8 @@ show3Dslider(ptychogram)
 
 
 #clean variables and memory
-del ptychogram
-del my_object
-del my_sample_FT
-gc.collect()
+# del ptychogram
+# del my_object
+# del my_sample_FT
+# gc.collect()
 
