@@ -301,6 +301,20 @@ def rect(arr, threshold = 0.5):
     arr = abs(arr)
     return arr<threshold
 
+def linear_overlap(D, s):
+    """Fractional overlap along one axis."""
+    return max(0.0, 1 - s/D)
+
+def area_overlap(D, s):
+    """Fraction of circular beam‐area overlapped."""
+    R = D/2
+    d = s
+    if d >= 2*R:
+        return 0.0
+    term1 = 2 * R**2 * np.arccos(d/(2*R))
+    term2 = 0.5 * d * np.sqrt(4*R**2 - d**2)
+    return (term1 - term2) / (np.pi * R**2)
+
 def hsv2rgb(hsv: np.ndarray) -> np.ndarray:
     """
     Convert a 3D hsv np.ndarray to rgb (5 times faster than colorsys).
