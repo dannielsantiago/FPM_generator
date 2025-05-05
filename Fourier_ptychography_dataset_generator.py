@@ -45,17 +45,17 @@ gc.collect()
 """
 Define experimental parameters
 """
-NA = 0.0039 #048  # detection NA: 0.0039-->32x32, 0.00781-->64x64, 0.0156-->128x128, 0.03125-->256x256, 0.0625-->512x512, 0.125-->1024x1024
+NA = 0.0039*2 #  # detection NA: 0.0039-->32x32, 0.00781-->64x64, 0.0156-->128x128, 0.03125-->256x256, 0.0625-->512x512, 0.125-->1024x1024
 #Define my illumiation NA
 #this should be larger than detection NA
 #to have comparable results, each simulation will try to retrieve a 3x larger NA
-NA_illu = 6*NA
+NA_illu = 10*NA
 #defines how many LEDs we want to use. A lower number of LEDs will result in a lower overlap.
 # we need to investigate what is the min. number of LEDs to have a good reconstuction for a given combination of
 # NA_illu and NA detection
 #usar numeros impares para que siempre haya un LED en la posicion 0,0
-nLEDs_x = 15
-nLEDs_y = 15
+nLEDs_x = 9
+nLEDs_y = 9
 
 #Define the lateral size of my LED matrix
 LM = 0.1 # let's say 10cm, adjust it to the experimental one
@@ -238,6 +238,8 @@ average_distance = distances.mean() # average distance
 
 overlap_linear = linear_overlap(Np_inner, average_distance)
 overlap_area = area_overlap(Np_inner, average_distance)
+print(f'linear overlap: {overlap_linear*100:.2F}%')
+print(f'area overlap: {overlap_area*100:.2F}%')
 
 plane_wave_simulation = True
 if plane_wave_simulation:
@@ -321,13 +323,24 @@ year = datetime.date.today().year
 folder = f'datasets/{year}_{month:02}_{day:02}'
 os.makedirs(folder, exist_ok=True)
 
-entrancePupilDiameter = 2*NA*No*dx
+# entrancePupilDiameter = 2*NA*No*dx
 # entrancePupilDiameter = 2 * Np * NA * dx**2 / wavelength
-# NA_recon = (entrancePupilDiameter*wavelength/ (2 * dx**2 * Np))
-# z02 = z0*NA/NA_recon
-# Z03 = d/(2*NA_recon)
 
-with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
+#computes the goal reference image for the given simulation parameters
+height = int(np.max(encoder_px2[:,0]) - np.min(encoder_px2[:,0])) + Np
+width = int(np.max(encoder_px2[:,1]) - np.min(encoder_px2[:,1])) + Np
+p1 = slice(int(No / 2  - height/2), int(No / 2 + height/2))
+p2 = slice(int(No / 2  - width/2), int(No / 2 + width/2))
+
+my_target_image = fft2c(my_sample_FT[p1, p2])
+my_target_amp = abs(my_target_image)
+folder2 = f'{folder}/{Np}x{Np}_dataset'
+os.makedirs(folder2, exist_ok=True)
+plt.imsave(f'{folder2}/target_amplitude_reference_{height}x{width}_NA_illu_{NA_illu}.png', my_target_amp, cmap='gray')
+plt.imsave(f'{folder2}/target_complex_reference_{height}x{width}_NA_illu_{NA_illu}.png', complex2rgb(my_target_image))
+
+filename = f'my_FPM_dataset_{Np}x{Np}_overlap_{overlap_linear*100:.2F}.h5'
+with h5py.File(f'{folder2}/{filename}','w') as hf:
     hf.create_dataset('ptychogram', data=ptychogram)
     hf.create_dataset('wavelength', data=wavelength)
     hf.create_dataset('dxd', data=(dxd,), dtype='f')
@@ -338,13 +351,12 @@ with h5py.File(f'{folder}/my_FPM_dataset.h5','w') as hf:
     # hf.create_dataset('NA', data=NA)
     # hf.create_dataset('entrancePupilDiameter', data=entrancePupilDiameter)
     hf.create_dataset('orientation', data=(0,))
-    hf.create_dataset('encoder_px', data=encoder_px)
 
-print(f'file saved in {folder}/my_FPM_dataset.h5')
+print(f'file saved in {folder2}/{filename}')
 
 
 #show ptychogram. This is the input dataset that will be used to reconstruct a larger image
-show3Dslider(ptychogram)
+# show3Dslider(ptychogram)
 
 
 #clean variables and memory
