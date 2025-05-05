@@ -12,7 +12,7 @@ from PtyLab.utils.utils import fft2c, ifft2c
 logging.basicConfig(level=logging.INFO)
 
 
-filePath = "datasets/2025_05_04/my_FPM_dataset.h5"
+filePath = "datasets/2025_05_05/64x64_dataset/my_FPM_dataset_64x64_overlap_75.48.h5"
 
 experimentalData, reconstruction, params, monitor, engine, calib = PtyLab.easyInitialize(
     filePath, operationMode="FPM"
@@ -25,12 +25,6 @@ experimentalData.NA=None
 experimentalData._setData()
 reconstruction.copyAttributesFromExperiment(experimentalData)
 reconstruction.computeParameters()
-
-with h5py.File(filePath, 'r') as hf:
-    positions = hf.get('encoder_px')[()]
-
-# reconstruction.positions0=-1*positions+reconstruction.No//2
-
 
 # %% Prepare everything for the reconstruction
 # now, all our experimental data is loaded into experimental_data and we don't have to worry about it anymore.
@@ -58,7 +52,7 @@ monitor.probeZoom = 0.1  # control probe plot FoV
 
 # %% Set param
 params.gpuSwitch = True
-params.positionOrder = "random"
+params.positionOrder = "NA"
 params.probePowerCorrectionSwitch = False
 params.comStabilizationSwitch = False
 params.probeBoundary = True
